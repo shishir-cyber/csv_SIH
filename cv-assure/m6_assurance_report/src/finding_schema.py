@@ -1,0 +1,1 @@
+"""Per-flag finding schema."""

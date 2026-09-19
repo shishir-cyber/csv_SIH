@@ -1,0 +1,1 @@
+"""Contributor-level binomial rollup."""

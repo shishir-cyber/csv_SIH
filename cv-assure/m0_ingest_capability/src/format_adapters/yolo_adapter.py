@@ -1,0 +1,1 @@
+"""YOLO to AssetRecord adapter."""

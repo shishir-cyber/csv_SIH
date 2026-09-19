@@ -1,0 +1,1 @@
+"""Unified internal asset schema."""

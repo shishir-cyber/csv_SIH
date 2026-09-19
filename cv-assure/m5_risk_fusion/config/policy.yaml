@@ -1,0 +1,9 @@
+version: 1
+thresholds:
+  accept: 0.25
+  review: 0.60
+  quarantine: 0.85
+actions:
+  - ACCEPT
+  - REVIEW
+  - QUARANTINE
