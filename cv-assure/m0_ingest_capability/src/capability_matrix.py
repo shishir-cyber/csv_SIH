@@ -1,61 +1,29 @@
 """Access-tier, task-type, and reference-mode capability probing."""
 
-from enum import Enum
-from typing import Any, Dict, Optional, Callable
-import onnx
-import onnxruntime as ort
+from typing import Any, Callable, Dict
 
+from base_detector import BaseDetector, DetectorResult
+from schema import AccessTier, CapabilityMatrix, ReferenceMode, TaskType
 
-# =====================================================================
-# 1. Access Tier definition
-# =====================================================================
+try:
+    from probe import probe_capabilities
+except ImportError:  # pragma: no cover - path layout fallback
+    probe_capabilities = None  # type: ignore[assignment]
 
-class AccessTier(str, Enum):
-    T0_BLACK_BOX = "T0"   # Only final label/answer is visible
-    T1_GREY_BOX = "T1"    # Label + confidence/logits visible
-    T2_WHITE_BOX = "T2"   # Full model file / weights visible
-
-    @property
-    def rank(self) -> int:
-        """Used to compare tiers: T0 < T1 < T2"""
-        ranks = {"T0": 0, "T1": 1, "T2": 2}
-        return ranks[self.value]
-
-
-# =====================================================================
-# 2. Capability Matrix - the "board" every detector reads from
-# =====================================================================
-
-class CapabilityMatrix:
-    """Holds what access level we currently have, plus basic info."""
-
-    def __init__(
-        self,
-        access_tier: AccessTier,
-        task_type: str = "vision_detection",
-        reference_mode: str = "bootstrapped",
-        source: str = "unknown",          # "local_file" or "remote_api"
-        metadata: Optional[Dict[str, Any]] = None,
-    ):
-        self.access_tier = access_tier
-        self.task_type = task_type
-        self.reference_mode = reference_mode
-        self.source = source
-        self.metadata = metadata or {}
-
-    def is_tier_supported(self, required_tier: AccessTier) -> bool:
-        """True if our current tier is enough for what a detector needs."""
-        return self.access_tier.rank >= required_tier.rank
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Turns this object into a plain dict, for API responses / UI."""
-        return {
-            "access_tier": self.access_tier.value,
-            "task_type": self.task_type,
-            "reference_mode": self.reference_mode,
-            "source": self.source,
-            "metadata": self.metadata,
-        }
+# Re-export v2 schema types so existing imports keep working.
+__all__ = [
+    "AccessTier",
+    "CapabilityMatrix",
+    "ReferenceMode",
+    "TaskType",
+    "inspect_local_onnx_file",
+    "inspect_remote_api",
+    "probe_capabilities",
+    "BaseDetector",
+    "DetectorResult",
+    "OutputSignatureVerifier",
+    "FragileWatermarkDetector",
+]
 
 
 # =====================================================================
@@ -69,9 +37,12 @@ def inspect_local_onnx_file(onnx_path: str) -> CapabilityMatrix:
 
     If we have any weight values stored in the file at all, that means
     we already have full access -> T2. This works no matter which tool
-    (PyTorch, TensorFlow, etc.) originally exported the ONNX file.
+    (PyTorch, TensorFlow, etc.)     originally exported the ONNX file.
     """
     try:
+        import onnx
+        import onnxruntime as ort
+
         onnx_model = onnx.load(onnx_path)
         onnx.checker.check_model(onnx_model)
 
@@ -81,19 +52,19 @@ def inspect_local_onnx_file(onnx_path: str) -> CapabilityMatrix:
         outputs = session.get_outputs()
 
         if has_weights:
-            detected_tier = AccessTier.T2_WHITE_BOX
+            detected_tier = AccessTier.T2_WEIGHTS
         else:
             output_names = [out.name.lower() for out in outputs]
             has_rich_outputs = any(
                 term in name for name in output_names
                 for term in ["logit", "raw", "embedding", "feature"]
             )
-            detected_tier = AccessTier.T1_GREY_BOX if has_rich_outputs else AccessTier.T0_BLACK_BOX
+            detected_tier = AccessTier.T1_LOGITS if has_rich_outputs else AccessTier.T0_LABELS
 
         return CapabilityMatrix(
             access_tier=detected_tier,
-            task_type="computer_vision",
-            reference_mode="bootstrapped",
+            task_type=TaskType.DETECTION,
+            reference_mode=ReferenceMode.BOOTSTRAPPED,
             source="local_file",
             metadata={
                 "num_inputs": len(session.get_inputs()),
@@ -104,7 +75,12 @@ def inspect_local_onnx_file(onnx_path: str) -> CapabilityMatrix:
 
     except Exception as err:
         print(f"[WARNING] ONNX file inspection failed, falling back to T0. Reason: {err}")
-        return CapabilityMatrix(access_tier=AccessTier.T0_BLACK_BOX, source="local_file")
+        return CapabilityMatrix(
+            access_tier=AccessTier.T0_LABELS,
+            task_type=TaskType.DETECTION,
+            reference_mode=ReferenceMode.UNREFERENCED,
+            source="local_file",
+        )
 
 
 # =====================================================================
@@ -124,83 +100,69 @@ def inspect_remote_api(
         keys = [k.lower() for k in response.keys()]
 
         if any(k in keys for k in ["weights", "state_dict", "parameters"]):
-            detected_tier = AccessTier.T2_WHITE_BOX
+            detected_tier = AccessTier.T2_WEIGHTS
         elif any(k in keys for k in ["logits", "confidence", "probabilities", "scores"]):
-            detected_tier = AccessTier.T1_GREY_BOX
+            detected_tier = AccessTier.T1_LOGITS
         else:
-            detected_tier = AccessTier.T0_BLACK_BOX
+            detected_tier = AccessTier.T0_LABELS
 
         return CapabilityMatrix(
             access_tier=detected_tier,
-            task_type="computer_vision",
-            reference_mode="bootstrapped",
+            task_type=TaskType.DETECTION,
+            reference_mode=ReferenceMode.BOOTSTRAPPED,
             source="remote_api",
             metadata={"raw_response_keys": list(response.keys())},
         )
 
     except Exception as err:
         print(f"[WARNING] Remote API probe failed, falling back to T0. Reason: {err}")
-        return CapabilityMatrix(access_tier=AccessTier.T0_BLACK_BOX, source="remote_api")
+        return CapabilityMatrix(
+            access_tier=AccessTier.T0_LABELS,
+            task_type=TaskType.DETECTION,
+            reference_mode=ReferenceMode.UNREFERENCED,
+            source="remote_api",
+        )
 
 
 # =====================================================================
-# 4. Base Detector class - every detector inherits from this
-# =====================================================================
-
-class BaseDetector:
-    """Parent class for every integrity detector (poison, watermark, etc.)."""
-
-    def __init__(self, name: str, min_required_tier: AccessTier):
-        self.name = name
-        self.min_required_tier = min_required_tier
-
-    def run(self, matrix: CapabilityMatrix, input_data: Any) -> Dict[str, Any]:
-        """Checks the capability matrix BEFORE running the real detection logic."""
-        if not matrix.is_tier_supported(self.min_required_tier):
-            return {
-                "detector": self.name,
-                "status": "UNAVAILABLE_AT_TIER",
-                "message": (
-                    f"Detector '{self.name}' needs tier {self.min_required_tier.value}, "
-                    f"but current access is only {matrix.access_tier.value}."
-                ),
-                "confidence": None,
-            }
-        return self._execute_detection(input_data)
-
-    def _execute_detection(self, input_data: Any) -> Dict[str, Any]:
-        raise NotImplementedError("Each detector must implement its own _execute_detection method.")
-
-
-# =====================================================================
-# 5. Example detectors (other teammates will replace these with real logic)
+# Example detectors (other teammates will replace these with real logic)
 # =====================================================================
 
 class OutputSignatureVerifier(BaseDetector):
     """Only needs T0 - works even with just the final label."""
 
-    def __init__(self):
-        super().__init__(name="Output Signature Verifier", min_required_tier=AccessTier.T0_BLACK_BOX)
+    def __init__(self) -> None:
+        super().__init__(
+            detector_id="output_signature_verifier",
+            required_tier=AccessTier.T0_LABELS,
+            supported_tasks=list(TaskType),
+            requires_reference=False,
+        )
 
-    def _execute_detection(self, input_data: Any) -> Dict[str, Any]:
-        return {
-            "detector": self.name,
-            "status": "SUCCESS",
-            "verified": True,
-            "confidence": 0.99,
-        }
+    def _run(self, dataset, capability_matrix, **kwargs) -> DetectorResult:
+        return DetectorResult(
+            detector_id=self.detector_id,
+            status="SUCCESS",
+            score=0.99,
+            details={"verified": True},
+        )
 
 
 class FragileWatermarkDetector(BaseDetector):
     """Needs T2 - only runs if we have full model weights."""
 
-    def __init__(self):
-        super().__init__(name="Fragile Watermark Detector", min_required_tier=AccessTier.T2_WHITE_BOX)
+    def __init__(self) -> None:
+        super().__init__(
+            detector_id="fragile_watermark_detector",
+            required_tier=AccessTier.T2_WEIGHTS,
+            supported_tasks=list(TaskType),
+            requires_reference=False,
+        )
 
-    def _execute_detection(self, input_data: Any) -> Dict[str, Any]:
-        return {
-            "detector": self.name,
-            "status": "SUCCESS",
-            "tamper_detected": False,
-            "confidence": 0.95,
-        }
+    def _run(self, dataset, capability_matrix, **kwargs) -> DetectorResult:
+        return DetectorResult(
+            detector_id=self.detector_id,
+            status="SUCCESS",
+            score=0.95,
+            details={"tamper_detected": False},
+        )
