@@ -1,0 +1,24 @@
+{
+  "module": "M3_INFERENCE_PROVENANCE",
+  "clause": "2.2.3 / 2.2.5",
+  "supported": [
+    "receipt_payload_tampering",
+    "record_replay_attack",
+    "record_deletion_or_reordering",
+    "hash_chain_discontinuity",
+    "model_substitution",
+    "merkle_checkpoint_inconsistency",
+    "invalid_ed25519_signature"
+  ],
+  "partial": [
+    "host_fabricated_results"
+  ],
+  "unsupported": [
+    "dishonest_signer_at_generation_time"
+  ],
+  "assumptions": [
+    "reference_profile_is_clean",
+    "signing_keys_uncompromised",
+    "verifier_key_held_in_dual_custody"
+  ]
+}

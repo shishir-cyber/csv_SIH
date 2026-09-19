@@ -1,0 +1,46 @@
+{
+  "c2pa_version": "2.1.0",
+  "title": "SIH CV-ASSURE Provenance Verification",
+  "format": "application/json",
+  "instance_id": "urn:uuid:cv-assure-m3-b3cf3f82aebeef94",
+  "claim_generator": "CV-ASSURE v2 / M3 Provenance Module",
+  "claim_generator_info": {
+    "name": "CV-ASSURE M3 Inference Provenance Engine",
+    "version": "2.0.0"
+  },
+  "security_caveat": "C2PA is a serialization format rather than a security guarantee. Independent formal methods analysis indicates core C2PA protocols fall short of end-to-end execution integrity without hardware TEE or ZK proofs.",
+  "assertions": [
+    {
+      "label": "c2pa.hash.data",
+      "data": {
+        "name": "input_image_sha256",
+        "hash": "b3cf3f82aebeef949f786e49dc32e8cc7900c710177b93d30be0305e1aa71315",
+        "alg": "sha256"
+      }
+    },
+    {
+      "label": "cvassure.model.binding",
+      "data": {
+        "model_weight_digest": "f95e8b2636b70ecaf52f428d0680427b9c0ce8d416f362d4247fbcd969f9331d",
+        "sequence_number": 1,
+        "provenance_tier": "T2"
+      }
+    },
+    {
+      "label": "c2pa.actions",
+      "data": {
+        "actions": [
+          {
+            "action": "c2pa.inference",
+            "softwareAgent": "CV-ASSURE ONNX Pipeline",
+            "when": "2026-09-19T10:58:48.332456+00:00"
+          }
+        ]
+      }
+    }
+  ],
+  "signature": {
+    "algorithm": "ed25519",
+    "sig_bytes_hex": "4a1e33f807e0274133be53eaf6ceb31848ff09a0d0394ec441d94517223f8232f2f7931ea8bf83c042c12a3a6cb32f7dae43fc41cc0c7ddb0526138e8bb88a0b"
+  }
+}
