@@ -1,0 +1,20 @@
+pipeline:
+  name: cv-assure-m3-inference-provenance
+  version: 1
+  stages:
+    - input_side
+    - receipt_building
+    - crypto_signing
+    - ledger_chaining
+    - verification_audit
+    - reporting
+
+paths:
+  preprocess_config: 00_setup/config/preprocess_config.json
+  sample_images: 01_input_side/data/sample_images
+  model: 01_input_side/data/model/demo_model.onnx
+
+provenance:
+  hash_algorithm: sha256
+  signature_algorithm: ed25519
+  ledger_format: jsonl
