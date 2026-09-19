@@ -1,0 +1,47 @@
+{
+  "module": "M3_INFERENCE_PROVENANCE",
+  "clause": "2.2.3 / 2.2.5",
+  "timestamp_utc": "2026-09-19T14:41:11.606760+00:00",
+  "audit_summary": {
+    "total_receipts_audited": 5,
+    "total_checkpoints_audited": 3,
+    "total_findings": 2,
+    "overall_disposition": "ACCEPT",
+    "severity_counts": {
+      "critical": 0,
+      "high": 0,
+      "warning": 0,
+      "info": 2
+    }
+  },
+  "findings": [
+    {
+      "finding_id": "FINDING-M3-SPOT-UNAVAILABLE-SEQ-1",
+      "detector": "spot_re_executor",
+      "detector_version": "1.2",
+      "asset_ref": "b8afc5a7212346dd0c0906058edc97a1aee019c7e036659a24edc8f112fb3eb3",
+      "contributor_ref": "C-07",
+      "score": 0.0,
+      "confidence": "medium",
+      "access_tier": "T2",
+      "severity": "info",
+      "reason_human_readable": "Spot re-execution skipped for sequence 1: model file or input image not available locally.",
+      "evidence_artifacts": [],
+      "recommended_disposition": "unavailable"
+    },
+    {
+      "finding_id": "FINDING-M3-SPOT-UNAVAILABLE-SEQ-5",
+      "detector": "spot_re_executor",
+      "detector_version": "1.2",
+      "asset_ref": "b2e2191e14ba82717a5ed8276986183b1a759eded0425f72fff1863e1ab924a9",
+      "contributor_ref": "C-07",
+      "score": 0.0,
+      "confidence": "medium",
+      "access_tier": "T2",
+      "severity": "info",
+      "reason_human_readable": "Spot re-execution skipped for sequence 5: model file or input image not available locally.",
+      "evidence_artifacts": [],
+      "recommended_disposition": "unavailable"
+    }
+  ]
+}
