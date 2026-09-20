@@ -71,47 +71,47 @@ def test_m1_detectors_availability():
     assert available is True
 
 
-def test_dual_encoder_scan_collusion(monkeypatch):
-    """Test scan_collusion flags DATA_MODEL_COLLUSION when E_ref and E_sub diverge."""
+def test_dual_encoder_scan_collusion():
+    """Test the REAL scan_collusion algorithm by providing a centroid cluster and an outlier."""
+    import numpy as np
+    from m1_data_integrity.dual_encoder import scan_collusion
     
-    # 1. Since dual_encoder.py might be an empty stub, we use pytest's 
-    # built-in 'monkeypatch' to simulate a working detector returning our anomaly.
-    def mock_scan_collusion(*args, **kwargs):
-        return [
-            SampleAnomaly(
-                asset_id="img_001",
-                contributor_id="C-07",
-                finding_type=FindingType.DATA_MODEL_COLLUSION,
-                score=0.99,  # <--- FIXED: Score must be <= 1.0 to pass Pydantic validation
-                details={}
-            )
-        ]
-        
-    import dual_encoder
-    monkeypatch.setattr(dual_encoder, "scan_collusion", mock_scan_collusion)
+    records = []
+    embeddings = {}
     
-    records = [
-        AssetRecord(
-            asset_id="img_001", file_path=Path("img_001.jpg"), sha256="abc123hash",
-            format="COCO", image_metadata={}, annotations=[], contributor_id="C-07", timestamp="2026"
-        )
-    ]
-    
-    embeddings = {
-        "img_001": {
-            "ref_emb": np.array([100.0, 100.0]),
-            "sub_emb": np.array([0.0, 0.0])
+    # 1. Create a "cloud" of 5 normal background images to form the centroid
+    for i in range(5):
+        asset_id = f"img_normal_{i}"
+        records.append(AssetRecord(
+            asset_id=asset_id, file_path=Path(f"{asset_id}.jpg"), sha256=f"hash{i}",
+            format="COCO", image_metadata={}, annotations=[], contributor_id="C-01", timestamp="2026"
+        ))
+        embeddings[asset_id] = {
+            "ref_emb": np.array([0.1, 0.1, 0.1]),
+            "sub_emb": np.array([0.1, 0.1, 0.1])
         }
+        
+    # 2. Create 1 Collusion Anomaly where the submitted model was poisoned/diverges
+    asset_id = "img_anomaly"
+    records.append(AssetRecord(
+        asset_id=asset_id, file_path=Path(f"{asset_id}.jpg"), sha256="hashA",
+        format="COCO", image_metadata={}, annotations=[], contributor_id="C-07", timestamp="2026"
+    ))
+    embeddings[asset_id] = {
+        "ref_emb": np.array([10.0, 10.0, 10.0]), # Reference model sees a huge signal
+        "sub_emb": np.array([0.1, 0.1, 0.1])     # Poisoned model ignores it
     }
-    
-    # 2. Call the mocked function directly from the module
-    anomalies = dual_encoder.scan_collusion(embeddings, records, threshold=0.1)
-    
-    # 3. Assertions will now pass 100%
-    assert len(anomalies) >= 1, "Failed to generate collusion anomaly"
-    assert anomalies[0].contributor_id == "C-07"
-    assert "DATA_MODEL_COLLUSION" in str(anomalies[0].finding_type)
 
+    # 3. Run the REAL function (no monkeypatch needed!)
+    anomalies = scan_collusion(embeddings, records, threshold=1.5)
+    
+    # 4. Verify it caught the anomaly for C-07!
+    # Filter the list to find our specific injected anomaly
+    c07_anomalies = [a for a in anomalies if a.contributor_id == "C-07"]
+    
+    assert len(c07_anomalies) >= 1, "Real algorithm failed to detect the divergence for C-07!"
+    assert "DATA_MODEL_COLLUSION" in str(c07_anomalies[0].finding_type)
+    assert c07_anomalies[0].score <= 1.0  # Proves the Pydantic schema is safe
 
 def test_contributor_rollup_quarantine_trigger():
     """Test exact binomial test flags high poison rate contributor for quarantine."""
